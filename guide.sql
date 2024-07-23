@@ -39,7 +39,7 @@ create or replace table support_tickets as (
 
 create or replace table flatten_support_tickets as (
 select 
-    ticket_type, 
+    category, 
     abs(hash(value:request)) % 10000000 as id,
     value:request as request, 
     value:scenario as scenario
@@ -49,7 +49,7 @@ from support_tickets, lateral flatten(input => tickets)
 --- Rating and Filtering Synthetic Data with an LLM as a Judge.
 
 create or replace table rate_support_tickets as (
-    SELECT ticket_type, id, request, scenario, TRY_PARSE_JSON(SNOWFLAKE.CORTEX.COMPLETE('llama3.1-405b', CONCAT('You are a judge to verify if a the support ticket received in a telecom company is realistic, and valid, please give scores from 1 to 5 for each category and give your final recommendation for the given question. Support Ticket: ', request, ' Please give the score in JSON format alone following this example: "{"realistic": 5, "valid": 4}".  You can put a reason into the result JSON as "reason": <reason>. Only include JSON in the output and no other words.'))) as rating
+    SELECT category, id, request, scenario, TRY_PARSE_JSON(SNOWFLAKE.CORTEX.COMPLETE('llama3.1-405b', CONCAT('You are a judge to verify if a the support ticket received in a telecom company is realistic, and valid, please give scores from 1 to 5 for each category and give your final recommendation for the given question. Support Ticket: ', request, ' Please give the score in JSON format alone following this example: "{"realistic": 5, "valid": 4}".  You can put a reason into the result JSON as "reason": <reason>. Only include JSON in the output and no other words.'))) as rating
     from flatten_support_tickets
 );
 
@@ -98,9 +98,9 @@ create or replace table validation_data as (
 
 select snowflake.cortex.finetune(
 'CREATE', 
-'CORTEX_FINETUNING_DB.PUBLIC.SUPPORT_TICKETS_FINETUNED', 'llama3-8b', 
-'SELECT request as prompt, category as completion from CORTEX_FINETUNING_DB.PUBLIC.training_data', 
-'SELECT request as prompt, category as completion from CORTEX_FINETUNING_DB.PUBLIC.validation_data'
+'DASH_DB.DASH_SCHEMA.SUPPORT_TICKETS_FINETUNED', 'llama3-8b', 
+'SELECT request as prompt, category as completion from DASH_DB.DASH_SCHEMA.training_data', 
+'SELECT request as prompt, category as completion from DASH_DB.DASH_SCHEMA.validation_data'
 );
 
 select snowflake.cortex.finetune('DESCRIBE', 'CortexFineTuningWorkflow_f4016e33-92ce-45d3-918a-19115c398f10');
@@ -110,5 +110,5 @@ select snowflake.cortex.finetune('DESCRIBE', 'CortexFineTuningWorkflow_f4016e33-
 SET fine_tuned_model_name = 'SUPPORT_TICKETS_FINETUNED';
 
 SELECT id, request,
-TRIM(SNOWFLAKE.CORTEX.COMPLETE($fine_tuned_model_name, request,'\n') as fine_tuned_model_response
-FROM support_tickets;
+TRIM(SNOWFLAKE.CORTEX.COMPLETE($fine_tuned_model_name, request), '\n') as fine_tuned_model_response
+FROM validation_data;
